@@ -239,6 +239,12 @@ function load(){ return Store.get(KEY).then(function(v){
 function save(){ clearTimeout(saveT); saveT=setTimeout(function(){ Store.set(KEY,JSON.stringify(S)); },220); }
 
 /* ============ 出題プール ============ */
+function exams(){
+  if(M.exams) return M.exams;
+  var mx=0; TOPICS.forEach(function(t){ if(t.hi>mx) mx=t.hi; });
+  return mx||0;
+}
+function exLabel(){ var n=exams(); return n?('過去'+n+'回'):'収録した過去問'; }
 function poolOk(c){
   if(S.pool==='mon') return !c.k;
   if(S.pool==='kako') return !!c.k;
@@ -751,7 +757,7 @@ function paceHtml(){
 }
 function vPick(){
   var h='<div class="hd"><h1 class="ttl">論点を選ぶ</h1><button class="sub" data-go="home" style="font-size:12px">戻る</button></div><div class="rule"></div>';
-  h+='<div class="note">左の数字は過去10回の本試験での出題肢数（Ａ／Ｂ／Ｃの内訳つき）。0回の論点は後回しで構いません。</div>';
+  h+='<div class="note">左の数字は'+exLabel()+'の本試験での出題肢数（Ａ／Ｂ／Ｃの内訳つき）。0回の論点は後回しで構いません。</div>';
   var ch=null;
   var srt=tmp.psort==='w';
   h+='<div class="chips" style="margin:12px 0"><button data-psort="ch" class="'+(srt?'':'on')+'">章の順</button>'+
@@ -765,7 +771,7 @@ function vPick(){
     var pct=s.total?Math.round(100*s.seen/s.total):0;
     h+='<button class="row" data-topic="'+t.c+'">'+
       '<span class="num" style="flex:0 0 54px;color:'+(t.w>60?'var(--shu)':t.w>25?'var(--hold)':'var(--faint)')+'">'+
-        t.ex+'肢 '+t.hi+'/10</span>'+
+        t.ex+'肢 '+t.hi+(exams()?'/'+exams():'')+'</span>'+
       '<span class="nm">'+esc(t.n)+'</span>'+
       '<span class="bar"><i style="width:'+pct+'%"></i></span>'+
       '<span class="num">'+s.seen+'/'+n+'</span></button>';
@@ -837,7 +843,7 @@ function vCard(){
     if(sv){
       h+='<div class="caution"><b>ここは差がつきません。</b>'+
         (sv==='出題実績なし'
-          ?'この論点は過去10回の本試験で1肢も出ていません。正誤を覚え込まず、次へ進んでください。'
+          ?'この論点は'+exLabel()+'の本試験に1肢も出ていません。収録した範囲での話なので絶対とは言えませんが、優先度は低いところです。'
           :sv==='重要性Ｃ'
           ?'教材上の重要性がＣです。他の論点に時間を回すほうが点が伸びます。'
           :'本試験での正答率が'+esc(sv.replace('正答率',''))+'。多くの受験生が落とした肢です。落としても差はつきません。')+
@@ -870,7 +876,7 @@ function vCard(){
           h+='<h4>あわせて確認</h4><ul>';
           t.kr.forEach(function(x){ h+='<li>'+esc(x)+'</li>'; }); h+='</ul>';
         }
-        h+='<span class="src">テキスト p.'+t.p+'〜'+t.pe+'　／　過去10回で'+t.ex+'肢（Ａ'+t.A+'・Ｂ'+t.B+'・Ｃ'+t.C+'）、'+t.hi+'回の試験で出題'+
+        h+='<span class="src">テキスト p.'+t.p+'〜'+t.pe+'　／　'+exLabel()+'で'+t.ex+'肢（Ａ'+t.A+'・Ｂ'+t.B+'・Ｃ'+t.C+'）、'+t.hi+'回の試験で出題'+
           (t.hi===0?'。出題実績がないので深追い不要。':'')+'</span>';
         h+='<div class="mini"><button data-say="k">この解説を読み上げる</button></div>';
         h+='</div>';
