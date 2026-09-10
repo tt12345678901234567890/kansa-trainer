@@ -6,22 +6,22 @@
 ## このリポジトリに教材は入っていません
 
 アプリ本体（`index.html`）だけを置いています。
-問題と解説は `cards.json` という別ファイルにあり、**端末の中だけ**に保存されます。
+問題と解説は `kansa-cards.json` という別ファイルにあり、**端末の中だけ**に保存されます。
 
 購入した教材の複製をインターネット上に置かないための作りです。
-`.gitignore` で `cards.json` はコミットされないようにしてあります。
+`.gitignore` で `kansa-cards.json` はコミットされないようにしてあります。
 
 > **注意**
 > GitHub Pages に置いたファイルは、リポジトリが Private でも
 > URL を知っていれば誰でも取得できます（Enterprise Cloud を除く）。
-> `cards.json` は絶対にこのリポジトリに入れないでください。
+> `kansa-cards.json` は絶対にこのリポジトリに入れないでください。
 
 ## 使い方
 
-1. `cards.json` を端末に保存する
+1. `kansa-cards.json` を端末に保存する
    （iPhone なら「ファイル」アプリ、Android なら「ダウンロード」）
 2. 公開された URL を開く
-3. 「教材ファイルを選ぶ」から `cards.json` を指定する
+3. 「教材ファイルを選ぶ」から `kansa-cards.json` を指定する
 4. 共有メニューから「ホーム画面に追加」
 
 2回目からは開くだけで前回の続きから始まります。
@@ -54,7 +54,7 @@ icon-192.png            アイコン
 icon-512.png
 apple-touch-icon.png
 .nojekyll               GitHub の自動変換を止める
-.gitignore              cards.json をコミットしないための設定
+.gitignore              kansa-cards.json をコミットしないための設定
 ```
 
 ## 更新するとき
@@ -62,5 +62,5 @@ apple-touch-icon.png
 `index.html` を差し替えて Commit するだけです。次に開いたときに反映されます。
 学習記録は消えません。
 
-`cards.json` を新しくした場合は、記録タブの「教材を読み込み直す」から入れ替えてください。
+`kansa-cards.json` を新しくした場合は、記録タブの「教材を読み込み直す」から入れ替えてください。
 こちらも学習記録は残ります。

@@ -71,8 +71,15 @@ button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer
   line-height:1.65;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid var(--line)}
 .body h4{font-family:var(--gothic);font-size:11.5px;color:var(--faint);font-weight:600;
   margin:13px 0 5px;letter-spacing:.06em}
-.body ul{margin:0;padding-left:1.1em;font-family:var(--gothic);font-size:13px;line-height:1.72}
-.body ul li{margin-bottom:4px}
+.body ul{margin:0;padding:0;list-style:none;font-family:var(--gothic);font-size:13px;line-height:1.72}
+.body ul li{margin-bottom:6px;padding-left:1.15em;text-indent:-1.15em}
+.body ul li:before{content:"・";color:var(--faint)}
+.body p{text-indent:1em;margin:0 0 .6em}
+.body p:last-child{margin-bottom:0}
+.body mark{background:linear-gradient(transparent 60%,#F2E2A0 60%);color:inherit;border-radius:1px}
+.body .hi{background:linear-gradient(transparent 62%,#F2E2A0 62%);border-radius:1px}
+.hlnote{font-family:var(--gothic);font-size:10.5px;color:var(--faint);margin:0 0 9px;text-indent:0}
+.hlnote b{color:var(--hold)}
 .note{font-size:11.5px;color:var(--faint);line-height:1.62;margin-top:9px}
 .next{display:flex;gap:9px;margin-top:20px}
 .next button{flex:1;border-radius:12px;padding:15px 0;font-size:15px;font-weight:600;
@@ -164,12 +171,30 @@ textarea{width:100%;min-height:110px;margin-top:9px;padding:10px;border-radius:1
 <script>
 (function(){
 "use strict";
-var CARDS=[], TOPICS=[], CZ={}, MAXW=1;
+var CARDS=[], TOPICS=[], CZ=[], MAXW=1, M={};
 var BYID={}, BYTP={}, TP={};
-var KEY='kansa_v1', DKEY='kansa_cards_v1', DVER='';
+var KEY='trainer_state', DKEY='trainer_cards_v1', DVER='';
+var DEF={title:'すきまトレーナー',sub:'',ask:'公認会計士短答式の肢です。',
+  pools:[{id:'mon',label:'問題集',sub:'',note:''},{id:'all',label:'全部',sub:'',note:''}],
+  cz:[],czNote:'',guide:[],cycleNote:'',freqNote:''};
 function initData(d){
-  if(!d||!d.cards||!d.cards.length||!d.topics) throw new Error('形式が違います');
-  CARDS=d.cards; TOPICS=d.topics; CZ=d.cz||{}; MAXW=d.maxw||1; DVER=d.v||'';
+  if(!d||!d.cards||!d.cards.length)
+    throw new Error('問題データが見つかりません。cards.json ではないファイルを選んでいませんか。');
+  var mt = d.meta||{};
+  var okTopics = d.topics && d.topics.length && d.topics[0] && d.topics[0].c && d.topics[0].kw;
+  if(!mt.sig || !okTopics){
+    throw new Error('すきまトレーナー用の教材ファイルではないようです（'+d.cards.length+'肢が入っています）。'+
+      '他の科目やほかのアプリの cards.json を選んでいませんか。'+
+      'ファイル名は 科目名-cards.json、中身には科目名と論点解説が入っている必要があります。');
+  }
+  var c0 = d.cards[0]||{};
+  if(!c0.q || c0.a===undefined || !c0.t)
+    throw new Error('問題データの形式が違います（q・a・t が必要です）。');
+  M = {}; for(var k in DEF) M[k]=DEF[k];
+  for(var k2 in mt) M[k2]=mt[k2];
+  if(!M.pools||!M.pools.length) M.pools=DEF.pools;
+  CARDS=d.cards; TOPICS=d.topics; CZ=M.cz||[]; MAXW=d.maxw||1; DVER=d.v||M.sig;
+  KEY='trainer_state_'+M.sig;
   BYID={}; BYTP={}; TP={};
   CARDS.forEach(function(c){ BYID[c.i]=c; (BYTP[c.t]=BYTP[c.t]||[]).push(c); });
   TOPICS.forEach(function(t){ TP[t.c]=t; });
@@ -199,7 +224,7 @@ function lp(){ try{localStorage.setItem(KEY+'_p','1'); if(localStorage.getItem(K
 var CYC=[5,7,10,14];
 var S=null, ses=null, view='home', tmp={}, saveT=null;
 function fresh(){ return {L:{},log:{},rank:'AB',mix:'freq',pool:'mon',rt:'on',ses:null,cyc:7,
-  cycStart:null,cycSeen:{},rounds:0,N:{},examStr:null,tts:0,ttsRate:1.05,s2dis:0,ver:1}; }
+  cycStart:null,cycSeen:{},rounds:0,N:{},examStr:null,tts:0,ttsRate:1.05,s2dis:0,hot:0,ver:1}; }
 S=fresh();
 function today(){ var d=new Date(); d.setHours(0,0,0,0); return Math.floor(d.getTime()/864e5); }
 function cyc(){ return S.cyc||7; }
@@ -219,8 +244,21 @@ function poolOk(c){
   if(S.pool==='kako') return !!c.k;
   return true;
 }
+function pool(id){ for(var i=0;i<M.pools.length;i++) if(M.pools[i].id===id) return M.pools[i]; return null; }
+function poolCount(id){ return CARDS.filter(function(c){
+  return id==='mon'?!c.k:(id==='kako'?!!c.k:true); }).length; }
 function rankOk(c){ return S.rank==='A'?c.r==='Ａ':S.rank==='AB'?c.r!=='Ｃ':true; }
-function inPool(c){ return poolOk(c)&&rankOk(c); }
+var _hot=null;
+function hotSet(){
+  if(_hot) return _hot;
+  var ts=TOPICS.slice().sort(function(a,b){ return b.w-a.w; });
+  var tot=0; ts.forEach(function(t){ tot+=t.w; });
+  var acc=0; _hot={};
+  for(var i=0;i<ts.length;i++){ if(acc>=tot*0.8) break; acc+=ts[i].w; _hot[ts[i].c]=1; }
+  return _hot;
+}
+function hotOk(c){ return S.hot?!!hotSet()[c.t]:true; }
+function inPool(c){ return poolOk(c)&&rankOk(c)&&hotOk(c); }
 function poolCards(){ return CARDS.filter(inPool); }
 function poolTotal(){ return poolCards().length; }
 
@@ -261,6 +299,21 @@ function cycState(){
   return {total:total,seen:seen,dayIn:dayIn,daysLeft:daysLeft,remain:remain,over:over,perDay:capv};
 }
 function cap(){ return Math.max(1,cycState().perDay); }
+function setCycle(n){
+  var old=cyc();
+  if(n===old){ S.cyc=n; return; }
+  var st=cycState();
+  S.cyc=n;
+  /* いまの進み具合と同じ位置に、新しい周期の何日目かを合わせる */
+  var prog=st.total?st.seen/st.total:0;
+  var dayIn=Math.max(1,Math.min(n,Math.floor(n*prog)+1));
+  S.cycStart=today()-dayIn+1;
+  /* 短くしたときは、先に予約済みの復習も新しい周期の中に引き寄せる */
+  if(n<old){
+    var lim=today()+n;
+    for(var k in S.L) if(S.L[k].due>lim) S.L[k].due=lim;
+  }
+}
 function repeatEst(){ var d=dueList().length; return Math.min(d,Math.round(cap()*0.45)); }
 function doneToday(){ var l=S.log[today()]; return l?l.n:0; }
 function budget(){ return Math.max(0,cap()-doneToday()); }
@@ -324,7 +377,7 @@ function startSession(mode,arg){
     q=shuf(ids.map(function(i){return BYID[i];}).filter(Boolean)).slice(0,30); }
   else if(mode==='weak'){ q=weakCards().slice(0,20); }
   else if(mode==='must'){ q=shuf(CARDS.filter(function(c){ return c.k&&c.mk==='◎'; })).slice(0,20); }
-  else if(mode==='cz'){ var tt=CZ[arg]||[]; var pool=[];
+  else if(mode==='cz'){ var tt=[]; CZ.forEach(function(x){ if(x.id===arg) tt=x.topics||[]; }); var pool=[];
     tt.forEach(function(x){ (BYTP[x]||[]).forEach(function(c){ pool.push(c); }); });
     q=wpick(pool,Math.min(25,pool.length)); }
   if(!q.length){ toast('出す肢がありません'); return; }
@@ -434,7 +487,7 @@ function explainText(c){
 }
 function askText(c){
   var t=TP[c.t];
-  return '公認会計士短答式・監査論の肢です。この肢について、監査論の予備知識が浅い人にも分かるように説明してください。\n\n'+
+  return M.ask+'この肢について、予備知識が浅い人にも分かるように説明してください。\n\n'+
     '【肢】'+c.q+'\n'+
     '【正解】'+(c.a?'○（正しい）':'×（誤り）')+'\n'+
     (c.w?('【問題集の解説】'+c.w+'\n'):'')+
@@ -449,6 +502,49 @@ function askText(c){
 }
 
 /* ============ 描画ユーティリティ ============ */
+function sentences(t){
+  t=String(t||''); var out=[], cur='';
+  for(var i=0;i<t.length;i++){ cur+=t[i]; if(t[i]==='。'){ out.push(cur); cur=''; } }
+  if(cur.replace(/\s/g,'')) out.push(cur);
+  return out;
+}
+var LEAD=/^(一方|ただし|なお|また|さらに|逆に|これに対し|次に|そのため|したがって|だから|つまり|要は|結果として|ここが|この点)/;
+function paras(ss){
+  var out=[], cur=[], len=0;
+  for(var i=0;i<ss.length;i++){
+    var s=ss[i].t;
+    if(cur.length && (len>=88 || (LEAD.test(s) && len>=45))){ out.push(cur); cur=[]; len=0; }
+    cur.push(ss[i]); len+=s.length;
+  }
+  if(cur.length) out.push(cur);
+  return out;
+}
+function gram(s){
+  s=String(s||'').replace(/[\s、。，．・「」『』（）()\[\]〔〕【】：:／/]/g,'');
+  var o={}, n=0;
+  for(var i=0;i<s.length-1;i++){
+    var b=s.substr(i,2);
+    if(/[\u4E00-\u9FFF\u30A0-\u30FFA-Za-z0-9]/.test(b) && !o[b]){ o[b]=1; n++; }
+  }
+  return {g:o,n:n};
+}
+function cover(cg,txt){
+  var b=gram(txt); if(!b.n) return 0;
+  var hit=0; for(var k in b.g) if(cg.g[k]) hit++;
+  return hit/b.n;
+}
+/* その肢に対応する解説の箇所を選ぶ。最大2つ、無理に選ばない */
+function relevant(c,items){
+  var cg=gram(c.q+' '+(c.w||''));
+  var sc=[], mx=0;
+  for(var i=0;i<items.length;i++){ var v=cover(cg,items[i]); sc.push({s:v,i:i}); if(v>mx) mx=v; }
+  if(mx<0.30) return {n:0,map:{}};
+  var lim=Math.max(0.30,mx*0.85);
+  sc.sort(function(a,b){ return b.s-a.s; });
+  var map={}, n=0;
+  for(var j=0;j<sc.length&&n<2;j++){ if(sc[j].s>=lim){ map[sc[j].i]=1; n++; } }
+  return {n:n,map:map};
+}
 function esc(s){ return String(s==null?'':s).replace(/[&<>]/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[m];}); }
 function toast(m){ var t=document.getElementById('toast'); t.textContent=m; t.className='toast on';
   clearTimeout(toast._t); toast._t=setTimeout(function(){t.className='toast';},1500); }
@@ -471,20 +567,20 @@ function pgLabel(c){ return (c.p&&c.p.length)?('テキスト p.'+c.p.join('／p.
 
 /* ============ 各ビュー ============ */
 function vLoad(){
-  var h='<div class="hd"><div><h1 class="ttl">監査論 すきまトレーナー</h1>'+
+  var h='<div class="hd"><div><h1 class="ttl">'+esc(CARDS.length?M.title:'すきまトレーナー')+'</h1>'+
     '<div class="sub">最初に一度だけ、教材の読み込みが必要です</div></div></div><div class="rule"></div>';
   h+='<div class="lead">このアプリ本体に教材は入っていません。配布された教材の複製を'+
      'インターネット上に置かないための作りです。<br><br>'+
-     'お手元の <b>cards.json</b> をこの端末から選んでください。読み込んだ内容はこの端末の中だけに保存され、次回からは自動で開きます。</div>';
-  if(tmp.err) h+='<div class="alert"><b>読み込めませんでした</b>'+esc(tmp.err)+'</div>';
+     'お手元の <b>教材ファイル（○○-cards.json）</b> をこの端末から選んでください。読み込んだ内容はこの端末の中だけに保存され、次回からは自動で開きます。</div>';
+  if(CARDS.length) h+='<div class="pace" style="margin-top:14px">いま入っている教材：<em>'+esc(DVER||'不明')+'</em><br>'+CARDS.length+'肢・'+TOPICS.length+'論点</div>';
+  if(tmp.err) h+='<div class="alert"><b>このファイルは使えません</b>'+esc(tmp.err)+'</div>';
   h+='<label class="pick">教材ファイルを選ぶ<input type="file" id="pick" accept=".json,application/json"></label>';
   if(CARDS.length) h+='<div class="mini" style="justify-content:center"><button data-go="home">入れ替えずに戻る</button></div>';
-  h+='<div class="stepn"><b>1</b><div>cards.json をこの端末に保存します（iPhoneならファイルアプリ、Androidならダウンロード）。</div></div>';
-  h+='<div class="stepn"><b>2</b><div>上のボタンから、その cards.json を選びます。</div></div>';
+  h+='<div class="stepn"><b>1</b><div>教材ファイルをこの端末に保存します（iPhoneならファイルアプリ、Androidならダウンロード）。</div></div>';
+  h+='<div class="stepn"><b>2</b><div>上のボタンから、そのファイルを選びます。'+
+     '<b>他の科目のアプリを使っている場合は、そちらの cards.json と間違えないでください。</b></div></div>';
   h+='<div class="stepn"><b>3</b><div>次回からは開くだけで前回の続きから始まります。</div></div>';
-  h+='<div class="caution" style="margin-top:16px"><b>収録しているもの。</b>'+
-     '短答対策問題集624肢と、過年度本試験400肢（令和6年Ⅰ回〜令和8年Ⅰ回）。'+
-     '78論点それぞれに解説を付けています。最初は問題集624肢だけが出ます。</div>';
+  if(M.intro) h+='<div class="caution" style="margin-top:16px"><b>収録しているもの。</b>'+esc(M.intro)+'</div>';
   h+='<div class="note" style="margin-top:16px">'+
      (PERSIST==='memory'
        ?'この環境では端末に保存できないため、開くたびに選び直しになります。ファイルを直接 Safari／Chrome で開くと保存できます。'
@@ -499,14 +595,15 @@ function loadCards(){
 }
 function acceptFile(file){
   var r=new FileReader();
+  var fn=(file&&file.name)||'';
   r.onload=function(){
     try{
       var d=JSON.parse(r.result);
       initData(d);
       Store.set(DKEY, r.result);
-      tmp={}; view='home'; toast('教材を読み込みました'); render();
+      tmp={}; view='home'; toast((M.sig||'教材')+'を読み込みました'); render();
     }catch(e){
-      tmp.err=(e&&e.message)||'ファイルを読めませんでした。cards.json を選んでください。';
+      tmp.err=((e&&e.message)||'ファイルを読めませんでした。')+(fn?('　選んだファイル：'+fn):'');
       render();
     }
   };
@@ -516,8 +613,8 @@ function acceptFile(file){
 function vHome(){
   var d=dueList().length, np=newPool().length;
   var cs=stairCounts(), nm=STEPNM();
-  var h='<div class="hd"><div><h1 class="ttl">監査論 すきまトレーナー</h1>'+
-    '<div class="sub">TAC 27年目標 '+poolTotal()+'肢／全'+CARDS.length+'肢・78論点</div></div></div><div class="rule"></div>';
+  var h='<div class="hd"><div><h1 class="ttl">'+esc(M.title)+'</h1>'+
+    '<div class="sub">'+(M.sub?esc(M.sub)+' ':'')+poolTotal()+'肢／全'+CARDS.length+'肢・'+TOPICS.length+'論点</div></div></div><div class="rule"></div>';
   h+='<div class="stair">';
   for(var i=0;i<3;i++) h+='<div class="'+(cs[i]?'on':'')+'"><b>'+cs[i]+'</b><span>'+nm[i]+'</span></div>';
   h+='</div>';
@@ -529,15 +626,16 @@ function vHome(){
   if(PERSIST==='memory') h+='<div class="alert"><b>この画面を閉じると記録が消えます</b>'+
     'ブラウザに保存できていません。記録タブから控えを書き出すか、Safari／Chromeでファイルを直接開いてください。</div>';
 
-  h+='<div class="lbl" style="margin-top:20px">使う教材</div><div class="seg">'+
-     '<button data-pool="mon" class="'+(S.pool==='mon'?'on':'')+'">短答対策<br><span style="font-size:9.5px;opacity:.75">問題集 624肢</span></button>'+
-     '<button data-pool="kako" class="'+(S.pool==='kako'?'on':'')+'">過年度本試験<br><span style="font-size:9.5px;opacity:.75">5回 400肢</span></button>'+
-     '<button data-pool="all" class="'+(S.pool==='all'?'on':'')+'">両方<br><span style="font-size:9.5px;opacity:.75">1024肢</span></button></div>';
-  h+='<div class="note" style="margin-top:-10px">'+(S.pool==='mon'
-    ?'まずはこれ。講義の優先順位でテキストに次ぐ2番目。「収録論点が出たらノーミス」が目標です。'
-    :S.pool==='kako'
-    ?'優先順位4番目。繰り返す必要はなく、学習が進んだ段階か本試験1か月前から。肢ごとの識別率つき。'
-    :'混ぜて出します。直前期の総ざらい向け。')+'</div>';
+  if(M.pools.length>1){
+    h+='<div class="lbl" style="margin-top:20px">使う教材</div><div class="seg">';
+    M.pools.forEach(function(pl){
+      h+='<button data-pool="'+pl.id+'" class="'+(S.pool===pl.id?'on':'')+'">'+esc(pl.label)+
+         '<br><span style="font-size:9.5px;opacity:.75">'+esc(pl.sub||(poolCount(pl.id)+'肢'))+'</span></button>';
+    });
+    h+='</div>';
+    var cur=pool(S.pool);
+    if(cur&&cur.note) h+='<div class="note" style="margin-top:-10px">'+esc(cur.note)+'</div>';
+  }
 
   h+='<div class="lbl" style="margin-top:18px">出題するランク</div><div class="seg">';
   [['A','Ａのみ'],['AB','Ａ＋Ｂ'],['ABC','全部']].forEach(function(r){
@@ -545,11 +643,26 @@ function vHome(){
     h+='<button data-rank="'+r[0]+'" class="'+(S.rank===r[0]?'on':'')+'">'+r[1]+'<br><span style="font-size:9.5px;opacity:.75">'+n+'肢</span></button>'; });
   h+='</div>';
 
+  var hotN=CARDS.filter(function(c){ return poolOk(c)&&rankOk(c)&&!!hotSet()[c.t]; }).length;
+  var hotT=0; TOPICS.forEach(function(t){ if(hotSet()[t.c]) hotT++; });
+  h+='<div class="lbl" style="margin-top:18px">出す範囲</div><div class="seg">'+
+     '<button data-hot="0" class="'+(S.hot?'':'on')+'">全'+TOPICS.length+'論点<br><span style="font-size:9.5px;opacity:.75">'+
+       CARDS.filter(function(c){return poolOk(c)&&rankOk(c);}).length+'肢</span></button>'+
+     '<button data-hot="1" class="'+(S.hot?'on':'')+'">よく出る論点だけ<br><span style="font-size:9.5px;opacity:.75">'+
+       hotT+'論点 '+hotN+'肢</span></button></div>';
+  h+='<div class="note" style="margin-top:-10px">'+(S.hot
+    ?'出題実績の重みで上位8割を占める'+hotT+'論点だけを出します。時間が足りないときはここまで割り切ってください。'
+    :'すべての論点から出します。')+'</div>';
+  var aN=CARDS.filter(function(c){ return poolOk(c)&&c.r==='Ａ'; }).length,
+      allN=CARDS.filter(poolOk).length;
+  if(allN&&aN/allN>0.7)
+    h+='<div class="note">この科目はほとんどの肢がＡなので、ランクの絞り込みではあまり量が減りません。'+
+       '減らしたいときは上の「よく出る論点だけ」を使ってください。</div>';
   h+='<div class="lbl" style="margin-top:18px">出題のかたより</div><div class="seg">'+
      '<button data-mix="freq" class="'+(S.mix==='freq'?'on':'')+'">頻出を厚く</button>'+
      '<button data-mix="flat" class="'+(S.mix==='flat'?'on':'')+'">均等</button></div>';
-  h+='<div class="note" style="margin-top:-10px">'+(S.mix==='freq'
-    ?'アウトプット講義の論点別出題実績（2021〜2026Ⅰの全10回・Ａ5点Ｂ3点Ｃ0点）で重みを付けています。品質管理・不正リスク対応基準・ＫＡＭ・金商法などが先に出ます。'
+  h+='<div class="note" style="margin-top:-10px">'+esc(S.mix==='freq'
+    ?(M.freqNote||'過去の本試験での出題実績で重みを付けています。')
     :'すべての肢を同じ確率で出します。')+'</div>';
   var s2=stage2();
   if(s2){
@@ -566,9 +679,8 @@ function vHome(){
   CYC.forEach(function(n){ var per=Math.ceil(poolTotal()/n);
     h+='<button data-cyc="'+n+'" class="'+(cyc()===n?'on':'')+'">'+n+'日<br>'+
       '<span style="font-size:9.5px;opacity:.75">'+per+'肢<br>約'+mins(Math.round(per*1.3))+'分</span></button>'; });
-  h+='</div><div class="note" style="margin-top:-10px">直前期の目安は「テキストを5日ほどで1周」。'+
-     '問題集も1・2週間で1周まわすと、復習スパンが長すぎて毎回熟読になる状態を避けられます。'+
-     '復習の最長間隔もこの日数に合わせるので、必ずこの周期で全部に戻ってきます。</div>';
+  h+='</div><div class="note" style="margin-top:-10px">'+esc(M.cycleNote||
+     '復習の最長間隔もこの日数に合わせるので、必ずこの周期で全部に戻ってきます。')+'</div>';
 
   h+='<div class="lbl" style="margin-top:18px">外した肢の扱い</div><div class="seg">'+
      '<button data-rt="on" class="'+(S.rt!=='off'?'on':'')+'">その場でもう一度</button>'+
@@ -597,7 +709,7 @@ function vHome(){
   var pm=planCounts(Math.max(5,Math.round(cap()*0.5)));
   h+='<button class="mode" data-go="more"'+(bd===0?' style="border-color:var(--ao)"':'')+
      '><b>もう少しやる</b><span>'+pm.all+'肢を前倒し。'+(bd===0?'今日の枠は終わっていますが続けられます。':'枠とは別に先の肢を先取りします。')+'</span></button>';
-  h+='<button class="mode" data-go="pick"><b>論点を選ぶ</b><span>78論点。出題実績つきで並べています</span></button>';
+  h+='<button class="mode" data-go="pick"><b>論点を選ぶ</b><span>'+TOPICS.length+'論点。出題実績つきで並べています</span></button>';
   h+='<button class="mode" data-go="czhome"><b>直前チェック</b><span>試験前数日以内に見たい箇所。経営者確認書・監査報告書の雛形・6章制度論・歴史</span></button>';
   h+=nav('home');
   return h;
@@ -663,21 +775,20 @@ function vPick(){
 }
 function vCz(){
   var h='<div class="hd"><h1 class="ttl">直前チェック</h1><button class="sub" data-go="home" style="font-size:12px">戻る</button></div><div class="rule"></div>';
-  h+='<div class="lead">直前期資料が監査論について名指しした箇所です。試験前の数日でここだけ回せるようにしてあります。</div>';
-  var L=[['kakunin','経営者確認書の記載事項','何を確認する書類かと、補完的な証拠にすぎない点'],
-         ['houkoku','監査報告書の雛形','記載区分の順番・記載事項・形式要件（署名と日付）'],
-         ['seido','テキスト6章 制度論','金商法・会社法・公認会計士法。暗記しにくい箇所。理屈で解けないので時間をかけない'],
-         ['rekishi','歴史・基準の沿革','当日の朝に。制度史と監査基準の改訂']];
-  L.forEach(function(x){
-    var n=0; (CZ[x[0]]||[]).forEach(function(c){ n+=(BYTP[c]||[]).filter(poolOk).length; });
-    h+='<button class="mode" data-cz="'+x[0]+'"><b>'+x[1]+'</b><span>'+x[2]+'　（'+n+'肢）</span></button>';
+  h+='<div class="lead">'+esc(M.czLead||'試験直前の数日で確認したい箇所です。ここだけ回せるようにしてあります。')+'</div>';
+  CZ.forEach(function(x){
+    var n=0; (x.topics||[]).forEach(function(c){ n+=(BYTP[c]||[]).filter(poolOk).length; });
+    if(!n) return;
+    h+='<button class="mode" data-cz="'+esc(x.id)+'"><b>'+esc(x.title)+'</b><span>'+esc(x.desc||'')+'　（'+n+'肢）</span></button>';
   });
   var mustN=CARDS.filter(function(c){return c.k&&c.mk==='◎';}).length;
-  h+='<div class="lbl" style="margin-top:18px">本試験で落とせない肢</div>';
-  h+='<button class="mode" data-go="must"><b>◎の肢だけ</b><span>受験者の85%が誤りを見抜けた肢が'+mustN+'肢。ここを落とすと差がつきます</span></button>';
+  if(mustN){
+    h+='<div class="lbl" style="margin-top:18px">本試験で落とせない肢</div>';
+    h+='<button class="mode" data-go="must"><b>◎の肢だけ</b><span>受験者の85%が誤りを見抜けた肢が'+mustN+'肢。ここを落とすと差がつきます</span></button>';
+  }
   h+='<div class="caution"><b>直前期はテコ入れをしない。</b>新しい教材に手を広げず、'+
      '自分が解けるはずの論点を確実に取り切る側に時間を使ってください。'+
-     '6章第3節（公認会計士法）と品質管理の細かい肢は、初見なら没問と割り切ってよい領域です。</div>';
+     (M.czNote?esc(M.czNote):'')+'</div>';
   h+=nav('home');
   return h;
 }
@@ -737,12 +848,23 @@ function vCard(){
     if(t&&t.kw){
       h+='<button data-sh="1"><b>'+(tmp.sh?'論点解説を閉じる':'論点解説を読む')+'</b> — '+esc(t.n)+'</button>';
       if(tmp.sh){
+        var ss=sentences(t.kw).map(function(x,i){ return {t:x,i:i}; });
+        var kh=t.kh||[];
+        var rel=relevant(c, ss.map(function(x){return x.t;}).concat(kh));
         h+='<div class="body">';
         h+='<div class="core">'+esc(t.kk)+'</div>';
-        h+=esc(t.kw);
-        if(t.kh&&t.kh.length){
+        if(rel.n) h+='<div class="hlnote"><b>色を付けた箇所</b>が、いま解いた肢に対応します。</div>';
+        paras(ss).forEach(function(g){
+          h+='<p>'+g.map(function(o){
+            return rel.map[o.i]?('<mark>'+esc(o.t)+'</mark>'):esc(o.t);
+          }).join('')+'</p>';
+        });
+        if(kh.length){
           h+='<h4>ひっかけの型</h4><ul>';
-          t.kh.forEach(function(x){ h+='<li>'+esc(x)+'</li>'; }); h+='</ul>';
+          kh.forEach(function(x,i){
+            var on=rel.map[ss.length+i];
+            h+='<li>'+(on?'<span class="hi">'+esc(x)+'</span>':esc(x))+'</li>';
+          }); h+='</ul>';
         }
         if(t.kr&&t.kr.length){
           h+='<h4>あわせて確認</h4><ul>';
@@ -868,15 +990,10 @@ function vDash(){
     h+='<div style="flex:1;background:'+(l.n?'var(--ao)':'var(--line)')+';height:'+Math.max(3,Math.round(52*l.n/maxn))+'px;border-radius:2px"></div>'; }
   h+='</div><div class="note">棒は1日の肢数。空白の日があっても、ペースは自動で計算し直します。</div>';
 
-  h+='<div class="lbl" style="margin-top:22px">この教材について</div>';
-  h+='<div class="gl"><b>教材の優先順位</b>① テキスト ② 短答対策問題集 ③ 短答答練 ④ 短答過去問題集 ⑤ アウトプット講義配付問題。'+
-     'このアプリは②と④を収録しています。①③⑤は紙で。</div>';
-  h+='<div class="gl"><b>本試験の形</b>全20問・100点・50分。問題1は横断的な総論が出やすく、金商法／会社法／会計士法で3〜4問。'+
-     '比較的得点しやすい監査実施・監査報告は後半に置かれやすいので、解く順番を先に決めておく。</div>';
-  h+='<div class="gl"><b>章別の重み（過去10回平均の出題肢）</b>第4章 22.2肢 ＞ 第2章 19.7 ＞ 第6章 14.4 ＞ 第5章 11.9 ＞ 第1章 7.3 ＞ 第3章 4.1。'+
-     '第3章がいちばん簡単、第6章がいちばん難しい。80%得点は困難な科目です。</div>';
-  h+='<div class="gl"><b>毎回のように出る論点</b>監査総論／リスク・アプローチ／監査報告書／不正／ＫＡＭ／品質管理／内部統制監査／金商法／会社法／公認会計士法。</div>';
-  h+='<div class="gl"><b>令和9年Ⅰ回から</b>配点の1割程度が英語での出題予定。本アプリは日本語での理解に絞っています。</div>';
+  if(M.guide&&M.guide.length){
+    h+='<div class="lbl" style="margin-top:22px">この教材について</div>';
+    M.guide.forEach(function(g){ h+='<div class="gl"><b>'+esc(g.t)+'</b>'+esc(g.d)+'</div>'; });
+  }
 
   h+='<div class="lbl" style="margin-top:22px">記録の持ち出し</div>';
   if(tmp.exp){
@@ -892,7 +1009,7 @@ function vDash(){
   }
   h+='<div class="lbl" style="margin-top:20px">教材ファイル</div>';
   h+='<div class="note">収録 '+CARDS.length+'肢・'+TOPICS.length+'論点'+(DVER?'（'+esc(DVER)+'）':'')+'。'+
-     '新しい cards.json を受け取ったら、ここから入れ替えてください。学習記録はそのまま残ります。</div>';
+     '新しい教材ファイルを受け取ったら、ここから入れ替えてください。学習記録はそのまま残ります。</div>';
   h+='<div class="mini"><button data-go="reload">教材を読み込み直す</button></div>';
   h+='<div class="note">保存先：'+(PERSIST==='claude'?'アプリ内':(PERSIST==='local'?'この端末のブラウザ':'一時メモリ（閉じると消えます）'))+'</div>';
   h+=nav('dash');
@@ -945,7 +1062,8 @@ document.addEventListener('click',function(e){
   if(d.s2){ S.s2dis=1; save(); toast('問題集に集中します'); render(); return; }
   if(d.rank){ S.rank=d.rank; save(); render(); return; }
   if(d.mix){ S.mix=d.mix; save(); render(); return; }
-  if(d.cyc){ S.cyc=+d.cyc; save(); render(); return; }
+  if(d.hot!==undefined){ S.hot=+d.hot; save(); render(); return; }
+  if(d.cyc){ setCycle(+d.cyc); save(); render(); return; }
   if(d.rt){ S.rt=d.rt; save(); render(); return; }
   if(d.tts!==undefined){ S.tts=+d.tts; save(); if(!S.tts)stopSpeak(); render(); return; }
   if(d.rate){ S.ttsRate=Math.max(0.6,Math.min(1.8,(S.ttsRate||1.05)+(d.rate==='+'?0.15:-0.15)));
@@ -1011,10 +1129,27 @@ if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('blur',function(){ tick(); flush(); });
 }
 setInterval(function(){ if(view==='card'&&ses) tick(); },5000);
-probe().then(load).then(loadCards).then(function(ok){
-  view = ok ? 'home' : 'load';
-  render();
-}, function(){ view='load'; render(); });
+function migrate(){
+  /* 監査論版で使っていた旧キーからの引き継ぎ */
+  return Store.get(KEY).then(function(v){
+    if(v) return;
+    if((M.sig||'').indexOf('監査論')<0) return;
+    return Store.get('kansa_v1').then(function(old){ if(old) return Store.set(KEY,old); },function(){});
+  },function(){});
+}
+function bootCards(){
+  return loadCards().then(function(ok){
+    if(ok) return true;
+    return Store.get('kansa_cards_v1').then(function(v){
+      if(!v) return false;
+      try{ initData(JSON.parse(v)); Store.set(DKEY,v); return true; }catch(e){ return false; }
+    },function(){ return false; });
+  });
+}
+probe().then(bootCards).then(function(ok){
+  if(!ok){ view='load'; render(); return; }
+  return migrate().then(load).then(function(){ view='home'; render(); });
+}).then(null,function(){ view='load'; render(); });
 })();
 
 </script>
