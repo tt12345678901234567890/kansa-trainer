@@ -332,7 +332,12 @@ function examDay(){ if(!S.examStr) return null; var d=new Date(S.examStr+'T00:00
   return Math.floor(d.getTime()/864e5); }
 function daysLeftExam(){ var e=examDay(); return e===null?null:e-today(); }
 function rounds(){ var l=daysLeftExam(); return l===null?null:Math.floor(l/cyc()); }
-function secPer(){ var t=0,n=0; for(var k in S.log){ t+=S.log[k].s||0; n+=S.log[k].n||0; } return n>8?Math.min(60,t/n):26; }
+function secPer(){
+  var t=0,n=0,d=today();
+  for(var k in S.log){ if(d-k>14) continue; t+=S.log[k].s||0; n+=S.log[k].n||0; }
+  if(n<=8){ t=0; n=0; for(var k2 in S.log){ t+=S.log[k2].s||0; n+=S.log[k2].n||0; } }
+  return n>8?Math.max(6,Math.min(45,t/n)):26;
+}
 function mins(n){ return Math.max(1,Math.round(n*secPer()/60)); }
 function guideDays(){ return S.rank==='A'?5:(S.rank==='AB'?7:10); }
 
@@ -413,8 +418,17 @@ function grade(id,good){
   var lg=S.log[t]||{n:0,ok:0,s:0}; lg.n++; if(good)lg.ok++; S.log[t]=lg;
   save();
 }
-function tick(){ if(!ses)return; var d=Math.round((Date.now()-ses.t0)/1000); ses.sec+=d; ses.t0=Date.now();
-  var t=today(), lg=S.log[t]||{n:0,ok:0,s:0}; lg.s=(lg.s||0)+d; S.log[t]=lg; }
+var TICKMAX=90;   /* 5秒ごとに数えているので、これを超える間隔は画面を離れていたとみなす */
+function tick(){
+  if(!ses) return;
+  var d=Math.round((Date.now()-ses.t0)/1000);
+  ses.t0=Date.now();
+  if(d<=0) return;
+  if(d>TICKMAX) d=TICKMAX;
+  ses.sec+=d;
+  var t=today(), lg=S.log[t]||{n:0,ok:0,s:0}; lg.s=(lg.s||0)+d; S.log[t]=lg;
+}
+function resume(){ if(ses) ses.t0=Date.now(); }   /* 戻ってきたら計測を測り直す */
 function answer(pick){
   var c=ses.queue[ses.i]; tick();
   ses.pick=pick; ses.graded=true; tmp.kan=false; tmp.sh=false;
@@ -1011,7 +1025,9 @@ function vDash(){
   } else {
     h+='<div class="mini"><button data-exp="open">記録を書き出す</button>'+
        '<button data-imp="open">記録を読み込む</button>'+
+       '<button data-treset="1">時間だけ消す</button>'+
        '<button data-reset="1" style="color:var(--shu)">全部消す</button></div>';
+    h+='<div class="note">「時間だけ消す」は学習時間の記録をゼロに戻します。解いた記録と進み具合はそのまま残ります。</div>';
   }
   h+='<div class="lbl" style="margin-top:20px">教材ファイル</div>';
   h+='<div class="note">収録 '+CARDS.length+'肢・'+TOPICS.length+'論点'+(DVER?'（'+esc(DVER)+'）':'')+'。'+
@@ -1115,6 +1131,8 @@ document.addEventListener('click',function(e){
       if(!o.L) throw 0; S=o; var f=fresh(); for(var k in f) if(S[k]===undefined) S[k]=f[k];
       save(); tmp.imp=0; toast('読み込みました'); render(); }catch(e){ toast('読み込めませんでした'); } return; }
   }
+  if(d.treset){ if(confirm('学習時間の記録だけを消します。解いた記録は残ります。よろしいですか？')){
+      for(var lk in S.log) S.log[lk].s=0; if(ses) ses.sec=0; save(); toast('時間の記録を消しました'); render(); } return; }
   if(d.reset){ if(confirm('学習記録を全部消します。よろしいですか？')){ S=fresh(); S.cycStart=today(); save(); toast('消しました'); render(); } return; }
 });
 document.addEventListener('change',function(e){
@@ -1128,11 +1146,14 @@ document.addEventListener('keydown',function(e){
 function flush(){ if(saveT){ clearTimeout(saveT); saveT=null; }
   try{ Store.set(KEY,JSON.stringify(S)); }catch(e){} }
 if(typeof document!=='undefined'&&document.addEventListener){
-  document.addEventListener('visibilitychange',function(){ if(document.hidden){ tick(); flush(); } });
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden){ tick(); flush(); } else { resume(); } });
 }
 if(typeof window!=='undefined'&&window.addEventListener){
   window.addEventListener('pagehide',function(){ tick(); flush(); });
   window.addEventListener('blur',function(){ tick(); flush(); });
+  window.addEventListener('focus',resume);
+  window.addEventListener('pageshow',resume);
 }
 setInterval(function(){ if(view==='card'&&ses) tick(); },5000);
 function migrate(){
